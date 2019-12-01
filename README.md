@@ -1,2 +1,2 @@
-# plms-k-means
+# k-means
 K-means Learning Activity
