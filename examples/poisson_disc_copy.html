@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<!-- saved from url=(0054)https://bl.ocks.org/mbostock/raw/dbb02448b0f93e4c82c3/ -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<style>
+
+.grid {
+  stroke: #000;
+  stroke-opacity: .15;
+  shape-rendering: crispEdges;
+}
+
+.exclusion {
+  fill: #ccc;
+}
+
+.candidate-connection,
+.candidate {
+  fill: #fff;
+  stroke: #000;
+  stroke-width: 1.5px;
+}
+
+.candidate-annulus {
+  fill: #000;
+  fill-opacity: .25;
+  stroke: #000;
+  stroke-width: 1.5px;
+}
+
+.sample--active {
+  fill: #f00;
+  stroke: #f00;
+  stroke-width: 2px;
+}
+
+</style>
+</head><body>
+<script src="./poisson_disc_files/d3.v3.min.js.download"></script>
+<script>
+
+var width = 960,
+    height = 500;
+
+var k = 30, // maximum number of samples before rejection
+    radius = 50,
+    radius2 = radius * radius,
+    R = 3 * radius2,
+    cellSize = radius * Math.SQRT1_2,
+    gridWidth = Math.ceil(width / cellSize),
+    gridHeight = Math.ceil(height / cellSize),
+    grid = new Array(gridWidth * gridHeight),
+    queue = [],
+    queueSize = 0;
+
+var arcEmptyAnnulus = d3.svg.arc()
+    .innerRadius(radius)
+    .outerRadius(radius)
+    .startAngle(0)
+    .endAngle(2 * Math.PI)();
+
+var arcAnnulus = d3.svg.arc()
+    .innerRadius(radius)
+    .outerRadius(radius * 2)
+    .startAngle(0)
+    .endAngle(2 * Math.PI)();
+
+var svg = d3.select("body").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+var gExclusion = svg.append("g")
+    .attr("class", "exclusion");
+
+svg.append("path")
+    .attr("class", "grid")
+    .attr("d", d3.range(cellSize, width, cellSize)
+        .map(function(x) { return "M" + Math.round(x) + ",0V" + height; })
+        .join("")
+      + d3.range(cellSize, height, cellSize)
+        .map(function(y) { return "M0," + Math.round(y) + "H" + width; })
+        .join(""));
+
+var searchAnnulus = svg.append("path")
+    .attr("class", "candidate-annulus");
+
+var gConnection = svg.append("g")
+    .attr("class", "candidate-connection");
+
+var gSample = svg.append("g")
+    .attr("class", "sample");
+
+var gCandidate = svg.append("g")
+    .attr("class", "candidate");
+
+sample(Math.random() * width, Math.random() * height);
+
+setTimeout(function selectActive() {
+  var i = Math.random() * queueSize | 0,
+      s = queue[i],
+      j = 0;
+
+  gCandidate
+      .style("opacity", null);
+
+  gConnection
+      .style("opacity", null);
+
+  searchAnnulus
+      .style("opacity", null)
+      .style("stroke-opacity", 0)
+      .attr("transform", "translate(" + s + ")")
+      .attr("d", arcEmptyAnnulus)
+    .transition()
+      .attr("d", arcAnnulus)
+      .style("stroke-opacity", 1)
+      .each("end", generateCandidate);
+
+  var sampleActive = gSample.selectAll("circle")
+    .filter(function(d) { return d === s; });
+
+  function generateCandidate() {
+    if (++j > k) return rejectActive();
+
+    var a = 2 * Math.PI * Math.random(),
+        r = Math.sqrt(Math.random() * R + radius2),
+        x = s[0] + r * Math.cos(a),
+        y = s[1] + r * Math.sin(a);
+
+    // Reject candidates that are outside the allowed extent.
+    if (0 > x || x >= width || 0 > y || y >= height) return generateCandidate();
+
+    // If this is an acceptable candidate, create a new sample;
+    // otherwise, generate a new candidate.
+    gCandidate.append("circle")
+        .attr("r", 1e-6)
+        .attr("cx", x)
+        .attr("cy", y)
+      .transition()
+        .attr("r", 3.75)
+        .each("end", far(x, y) ? acceptCandidate : generateCandidate);
+
+    function acceptCandidate() {
+      removeCandidates()
+          .each("end", queueSize ? selectActive : null);
+
+      sample(x, y);
+    }
+  }
+
+  function rejectActive() {
+    queue[i] = queue[--queueSize];
+    queue.length = queueSize;
+
+    removeCandidates()
+        .each("end", queueSize ? selectActive : null);
+
+    sampleActive
+        .classed("sample--active", false);
+  }
+
+  function removeCandidates() {
+    gCandidate.transition()
+        .style("opacity", 0)
+      .selectAll("circle")
+        .remove();
+
+    gConnection.transition()
+        .style("opacity", 0)
+      .selectAll("line")
+        .remove();
+
+    return searchAnnulus.transition()
+        .style("opacity", 0);
+  }
+}, 250);
+
+function far(x, y) {
+  var i = x / cellSize | 0,
+      j = y / cellSize | 0,
+      i0 = Math.max(i - 2, 0),
+      j0 = Math.max(j - 2, 0),
+      i1 = Math.min(i + 3, gridWidth),
+      j1 = Math.min(j + 3, gridHeight);
+
+  for (j = j0; j < j1; ++j) {
+    var o = j * gridWidth;
+    for (i = i0; i < i1; ++i) {
+      if (s = grid[o + i]) {
+        var s,
+            dx = s[0] - x,
+            dy = s[1] - y;
+        if (dx * dx + dy * dy < radius2) {
+          gConnection.append("line")
+              .attr("x1", x)
+              .attr("y1", y)
+              .attr("x2", x)
+              .attr("y2", y)
+            .transition()
+              .attr("x2", s[0])
+              .attr("y2", s[1]);
+
+          return false;
+        }
+      }
+    }
+  }
+
+  return true;
+}
+
+function sample(x, y) {
+  var s = [x, y];
+
+  gExclusion.append("circle")
+      .attr("r", 1e-6)
+      .attr("cx", x)
+      .attr("cy", y)
+    .transition()
+      .attr("r", radius);
+
+  gSample.append("circle")
+      .datum(s)
+      .attr("class", "sample--active")
+      .attr("r", 1e-6)
+      .attr("cx", x)
+      .attr("cy", y)
+    .transition()
+      .attr("r", 3);
+
+  queue.push(s);
+  grid[gridWidth * (y / cellSize | 0) + (x / cellSize | 0)] = s;
+  ++queueSize;
+  return s;
+}
+
+</script><svg width="960" height="500"><g class="exclusion"><circle r="50" cx="586.2300436109992" cy="25.418083299684312"></circle><circle r="50" cx="639.343487858562" cy="16.018805520511528"></circle><circle r="50" cx="730.516086593049" cy="30.914541842377346"></circle><circle r="50" cx="569.9293693636246" cy="99.95539528108385"></circle><circle r="50" cx="642.8898159658563" cy="104.5286867270624"></circle><circle r="50" cx="779.534398113926" cy="16.219172434613345"></circle><circle r="50" cx="790.4997371824002" cy="71.35742496199703"></circle><circle r="50" cx="497.85194327566177" cy="10.775669492483184"></circle><circle r="50" cx="858.5027579679146" cy="7.499255827804312"></circle><circle r="50" cx="560.217717976293" cy="160.9169012353868"></circle><circle r="50" cx="407.86047854807816" cy="22.075844141797205"></circle><circle r="50" cx="338.5067300795142" cy="31.719956264598416"></circle><circle r="50" cx="477.5976882768088" cy="63.70553759244553"></circle><circle r="50" cx="309.1675702740536" cy="74.487365437753"></circle><circle r="50" cx="874.0385173146127" cy="75.52429716116144"></circle><circle r="50" cx="935.7112723452714" cy="153.55112727234564"></circle><circle r="50" cx="947.2696464281518" cy="104.81671606459179"></circle><circle r="50" cx="611.2625274397427" cy="158.40857075862243"></circle><circle r="50" cx="424.5730152355436" cy="118.42174742732087"></circle><circle r="50" cx="673.2751800769083" cy="227.84268037717675"></circle><circle r="50" cx="674.57338927011" cy="163.3431634883624"></circle><circle r="50" cx="685.9681953644775" cy="325.99857797418645"></circle><circle r="50" cx="250.9948128280449" cy="10.335538349183626"></circle><circle r="50" cx="942.7239277802589" cy="2.6530958209684137"></circle><circle r="50" cx="739.2273768149546" cy="119.08362306163964"></circle><circle r="50" cx="350.13570261232036" cy="105.25227465812546"></circle><circle r="50" cx="590.2105043692841" cy="226.60965754150612"></circle><circle r="50" cx="323.92754699570185" cy="162.94909483370512"></circle><circle r="50" cx="270.4375294442758" cy="122.65494051373221"></circle><circle r="50" cx="764.692903598581" cy="251.76640793152825"></circle><circle r="50" cx="860.1644338348624" cy="153.29186080625607"></circle><circle r="50" cx="238.49099676423617" cy="202.58437369256808"></circle><circle r="50" cx="681.1822318127906" cy="52.1268385468342"></circle><circle r="50" cx="800.2501921376355" cy="142.42256067719865"></circle><circle r="50" cx="726.6406326833577" cy="169.35214882480625"></circle><circle r="50" cx="610.990005143342" cy="320.821879771157"></circle><circle r="50" cx="804.5066378451733" cy="209.6392015743058"></circle><circle r="50" cx="911.528825095164" cy="213.1647982087112"></circle><circle r="50" cx="220.18589069926566" cy="108.05059856991969"></circle><circle r="50" cx="214.2110876081038" cy="52.31134368261846"></circle><circle r="50" cx="710.5925836113222" cy="261.54009598599816"></circle><circle r="50" cx="399.6744224354702" cy="220.12349964617755"></circle><circle r="50" cx="641.3548276715643" cy="390.77316309053924"></circle><circle r="50" cx="860.4664816218584" cy="217.54546296782888"></circle><circle r="50" cx="543.1047197720005" cy="54.03165713337406"></circle><circle r="50" cx="557.4741098350684" cy="401.29470405252084"></circle><circle r="50" cx="576.9074453359394" cy="491.32732295936006"></circle><circle r="50" cx="882.8837847879756" cy="263.89924134238623"></circle><circle r="50" cx="647.3630467106917" cy="446.6272745639551"></circle><circle r="50" cx="955.289312857391" cy="54.24791925630618"></circle><circle r="50" cx="179.41239980444163" cy="155.46078044537938"></circle><circle r="50" cx="314.07653619730553" cy="256.4644843128645"></circle><circle r="50" cx="507.8111643077461" cy="473.727262606196"></circle><circle r="50" cx="171.12085988331236" cy="8.625528760994632"></circle><circle r="50" cx="742.3286560648077" cy="335.9003479214064"></circle><circle r="50" cx="760.3259581576381" cy="383.47750026371415"></circle><circle r="50" cx="812.1565855960627" cy="330.44182344620566"></circle><circle r="50" cx="571.6183144846211" cy="284.06640467141375"></circle><circle r="50" cx="498.5878014133358" cy="189.1235298515489"></circle><circle r="50" cx="857.3478979375686" cy="377.2389991616332"></circle><circle r="50" cx="355.11928791269025" cy="292.3990742436414"></circle><circle r="50" cx="508.44918163917475" cy="112.35474856640577"></circle><circle r="50" cx="537.737367027187" cy="232.33626652759364"></circle><circle r="50" cx="816.8759112149968" cy="259.4716532700752"></circle><circle r="50" cx="124.52135581018563" cy="69.49388325721871"></circle><circle r="50" cx="898.9827198615457" cy="418.7643515001733"></circle><circle r="50" cx="265.06413693823123" cy="278.61299958425053"></circle><circle r="50" cx="383.2853917019784" cy="148.68324657768633"></circle><circle r="50" cx="465.3455801891296" cy="427.040647150109"></circle><circle r="50" cx="154.12773716486728" cy="233.37912719296162"></circle><circle r="50" cx="323.38340348804894" cy="365.25456240382624"></circle></g><path class="grid" d="M35,0V500M71,0V500M106,0V500M141,0V500M177,0V500M212,0V500M247,0V500M283,0V500M318,0V500M354,0V500M389,0V500M424,0V500M460,0V500M495,0V500M530,0V500M566,0V500M601,0V500M636,0V500M672,0V500M707,0V500M742,0V500M778,0V500M813,0V500M849,0V500M884,0V500M919,0V500M955,0V500M0,35H960M0,71H960M0,106H960M0,141H960M0,177H960M0,212H960M0,247H960M0,283H960M0,318H960M0,354H960M0,389H960M0,424H960M0,460H960M0,495H960"></path><path class="candidate-annulus" transform="translate(498.5878014133358,189.1235298515489)" d="M0,50.1769472A50.1769472,50.1769472 0 1,1 0,-50.1769472A50.1769472,50.1769472 0 1,1 0,50.1769472M0,50A50,50 0 1,0 0,-50A50,50 0 1,0 0,50Z" style="stroke-opacity: 0.00353894;"></path><g class="candidate-connection" style=""></g><g class="sample"><circle class="" r="3" cx="586.2300436109992" cy="25.418083299684312"></circle><circle class="" r="3" cx="639.343487858562" cy="16.018805520511528"></circle><circle class="" r="3" cx="730.516086593049" cy="30.914541842377346"></circle><circle class="sample--active" r="3" cx="569.9293693636246" cy="99.95539528108385"></circle><circle class="" r="3" cx="642.8898159658563" cy="104.5286867270624"></circle><circle class="" r="3" cx="779.534398113926" cy="16.219172434613345"></circle><circle class="" r="3" cx="790.4997371824002" cy="71.35742496199703"></circle><circle class="" r="3" cx="497.85194327566177" cy="10.775669492483184"></circle><circle class="sample--active" r="3" cx="858.5027579679146" cy="7.499255827804312"></circle><circle class="sample--active" r="3" cx="560.217717976293" cy="160.9169012353868"></circle><circle class="" r="3" cx="407.86047854807816" cy="22.075844141797205"></circle><circle class="" r="3" cx="338.5067300795142" cy="31.719956264598416"></circle><circle class="sample--active" r="3" cx="477.5976882768088" cy="63.70553759244553"></circle><circle class="sample--active" r="3" cx="309.1675702740536" cy="74.487365437753"></circle><circle class="" r="3" cx="874.0385173146127" cy="75.52429716116144"></circle><circle class="" r="3" cx="935.7112723452714" cy="153.55112727234564"></circle><circle class="" r="3" cx="947.2696464281518" cy="104.81671606459179"></circle><circle class="" r="3" cx="611.2625274397427" cy="158.40857075862243"></circle><circle class="sample--active" r="3" cx="424.5730152355436" cy="118.42174742732087"></circle><circle class="sample--active" r="3" cx="673.2751800769083" cy="227.84268037717675"></circle><circle class="" r="3" cx="674.57338927011" cy="163.3431634883624"></circle><circle class="sample--active" r="3" cx="685.9681953644775" cy="325.99857797418645"></circle><circle class="sample--active" r="3" cx="250.9948128280449" cy="10.335538349183626"></circle><circle class="" r="3" cx="942.7239277802589" cy="2.6530958209684137"></circle><circle class="" r="3" cx="739.2273768149546" cy="119.08362306163964"></circle><circle class="sample--active" r="3" cx="350.13570261232036" cy="105.25227465812546"></circle><circle class="sample--active" r="3" cx="590.2105043692841" cy="226.60965754150612"></circle><circle class="" r="3" cx="323.92754699570185" cy="162.94909483370512"></circle><circle class="" r="3" cx="270.4375294442758" cy="122.65494051373221"></circle><circle class="sample--active" r="3" cx="764.692903598581" cy="251.76640793152825"></circle><circle class="" r="3" cx="860.1644338348624" cy="153.29186080625607"></circle><circle class="sample--active" r="3" cx="238.49099676423617" cy="202.58437369256808"></circle><circle class="" r="3" cx="681.1822318127906" cy="52.1268385468342"></circle><circle class="" r="3" cx="800.2501921376355" cy="142.42256067719865"></circle><circle class="" r="3" cx="726.6406326833577" cy="169.35214882480625"></circle><circle class="sample--active" r="3" cx="610.990005143342" cy="320.821879771157"></circle><circle class="sample--active" r="3" cx="804.5066378451733" cy="209.6392015743058"></circle><circle class="sample--active" r="3" cx="911.528825095164" cy="213.1647982087112"></circle><circle class="sample--active" r="3" cx="220.18589069926566" cy="108.05059856991969"></circle><circle class="sample--active" r="3" cx="214.2110876081038" cy="52.31134368261846"></circle><circle class="" r="3" cx="710.5925836113222" cy="261.54009598599816"></circle><circle class="sample--active" r="3" cx="399.6744224354702" cy="220.12349964617755"></circle><circle class="sample--active" r="3" cx="641.3548276715643" cy="390.77316309053924"></circle><circle class="sample--active" r="3" cx="860.4664816218584" cy="217.54546296782888"></circle><circle class="sample--active" r="3" cx="543.1047197720005" cy="54.03165713337406"></circle><circle class="sample--active" r="3" cx="557.4741098350684" cy="401.29470405252084"></circle><circle class="" r="3" cx="576.9074453359394" cy="491.32732295936006"></circle><circle class="sample--active" r="3" cx="882.8837847879756" cy="263.89924134238623"></circle><circle class="sample--active" r="3" cx="647.3630467106917" cy="446.6272745639551"></circle><circle class="sample--active" r="3" cx="955.289312857391" cy="54.24791925630618"></circle><circle class="sample--active" r="3" cx="179.41239980444163" cy="155.46078044537938"></circle><circle class="sample--active" r="3" cx="314.07653619730553" cy="256.4644843128645"></circle><circle class="sample--active" r="3" cx="507.8111643077461" cy="473.727262606196"></circle><circle class="sample--active" r="3" cx="171.12085988331236" cy="8.625528760994632"></circle><circle class="sample--active" r="3" cx="742.3286560648077" cy="335.9003479214064"></circle><circle class="sample--active" r="3" cx="760.3259581576381" cy="383.47750026371415"></circle><circle class="sample--active" r="3" cx="812.1565855960627" cy="330.44182344620566"></circle><circle class="sample--active" r="3" cx="571.6183144846211" cy="284.06640467141375"></circle><circle class="sample--active" r="3" cx="498.5878014133358" cy="189.1235298515489"></circle><circle class="sample--active" r="3" cx="857.3478979375686" cy="377.2389991616332"></circle><circle class="sample--active" r="3" cx="355.11928791269025" cy="292.3990742436414"></circle><circle class="" r="3" cx="508.44918163917475" cy="112.35474856640577"></circle><circle class="sample--active" r="3" cx="537.737367027187" cy="232.33626652759364"></circle><circle class="sample--active" r="3" cx="816.8759112149968" cy="259.4716532700752"></circle><circle class="sample--active" r="3" cx="124.52135581018563" cy="69.49388325721871"></circle><circle class="sample--active" r="3" cx="898.9827198615457" cy="418.7643515001733"></circle><circle class="sample--active" r="3" cx="265.06413693823123" cy="278.61299958425053"></circle><circle class="sample--active" r="3" cx="383.2853917019784" cy="148.68324657768633"></circle><circle class="sample--active" r="3" cx="465.3455801891296" cy="427.040647150109"></circle><circle class="sample--active" r="3" cx="154.12773716486728" cy="233.37912719296162"></circle><circle class="sample--active" r="3" cx="323.38340348804894" cy="365.25456240382624"></circle></g><g class="candidate" style=""></g></svg>
+</body></html>
