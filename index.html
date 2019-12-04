@@ -19,12 +19,29 @@ path {
     shape-rendering: crispEdges;
 }
 
+.svg-container {
+    display: inline-block;
+    position: relative;
+    width: 100%;
+    padding-bottom: 100%; /* aspect ratio */
+    vertical-align: top;
+    overflow: hidden;
+}
+
+.svg-content-responsive {
+    display: inline-block;
+    position: absolute;
+    top: 10px;
+    left: 0;
+}
+
 </style>
 </head>
 <body>
 
 <!-- load the d3.js library -->    
 <script src="./scripts/d3.v3.min.js.download"></script>
+<!--<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/5.7.0/d3.min.js"></script>-->
 
 <script>
 
@@ -38,13 +55,20 @@ var margin = {top: 30, right: 20, bottom: 30, left: 50},
     width = 600 - margin.left - margin.right,
     height = 270 - margin.top - margin.bottom;
 
+var svgWidth = width + margin.left + margin.right;
+var svgHeight = height + margin.top + margin.bottom;
+
 // Adds the svg canvas
+//var svg = d3.select("div#chartId")
 var svg = d3.select("body")
+    .append("div")
+    .classed("svg-container", true)
     .append("svg")
-        .attr("width", width + margin.left + margin.right)
-        .attr("height", height + margin.top + margin.bottom)
+        .attr("preserveAspectRatio", "xMinYMin meet")
+        .attr("viewBox", "0 0 " + svgWidth + " " + svgHeight)
+        .classed("svg-content-responsive", true)
     .append("g")
-        .attr("transform", 
+        .attr("transform",
               "translate(" + margin.left + "," + margin.top + ")");
 
 // Parse the data
@@ -176,4 +200,6 @@ svg.append("g")
     .call(yAxis);
 
 </script>
+
+<div id="chartId"></div>
 </body>
